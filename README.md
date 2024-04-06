@@ -1,4 +1,4 @@
-Note: This is a personal fork for personal use and contributions. Please ignore and use the original tool instead.
+Note: **This is a personal fork for personal use and contributions.** Please ignore and use the original tool instead.
 
 # Chris Titus Tech's Windows Utility
 
