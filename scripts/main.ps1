@@ -145,8 +145,8 @@ Invoke-WPFRunspace -ScriptBlock {
 # Print the logo
 Invoke-WPFFormVariables
 
-# Check if Chocolatey is installed
-Install-WinUtilChoco
+# Check if Chocolatey is installed @lctde Skip Chocolatey instalation
+#Install-WinUtilChoco
 
 # Set the titlebar
 $sync["Form"].title = $sync["Form"].title + " " + $sync.version
