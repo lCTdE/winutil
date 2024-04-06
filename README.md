@@ -1,3 +1,5 @@
+Note: This is a personal fork for personal use and contributions. Please ignore and use the original tool instead.
+
 # Chris Titus Tech's Windows Utility
 
 This utility is a compilation of Windows tasks I perform on each Windows system I use. It is meant to streamline *installs*, debloat with *tweaks*, troubleshoot with *config*, and fix Windows *updates*. I am extremely picky about any contributions to keep this project clean and efficient. 
