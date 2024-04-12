@@ -10227,7 +10227,7 @@ $sync.configs.tweaks = '{
         "Name": "NoConnectedUser",
         "Type": "DWord",
         "Value": "1",
-        "OriginalValue": "-"
+        "OriginalValue": "0"
       }
     ]
   }
