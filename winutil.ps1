@@ -10,7 +10,7 @@
     Author         : Chris Titus @christitustech
     Runspace Author: @DeveloperDurp
     GitHub         : https://github.com/ChrisTitusTech
-    Version        : 24.04.12
+    Version        : 24.04.14
 #>
 param (
     [switch]$Debug,
@@ -47,7 +47,7 @@ Add-Type -AssemblyName System.Windows.Forms
 # Variable to sync between runspaces
 $sync = [Hashtable]::Synchronized(@{})
 $sync.PSScriptRoot = $PSScriptRoot
-$sync.version = "24.04.12"
+$sync.version = "24.04.14"
 $sync.configs = @{}
 $sync.ProcessRunning = $false
 
@@ -9443,11 +9443,11 @@ $sync.configs.tweaks = '{
         "Type": "DWord"
       },
       {
-        "Path": "HKLM:\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Multimedia\\SystemProfile\\Tasks\\Games",
-        "OriginalValue": "High",
-        "Name": "Scheduling Category",
-        "Value": "High",
-        "Type": "String"
+        "Path": "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\UserProfileEngagement",
+        "OriginalValue": "1",
+        "Name": "ScoobeSystemSettingEnabled",
+        "Value": "0",
+        "Type": "DWord"
       }
     ],
     "InvokeScript": [
