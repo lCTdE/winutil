@@ -10,12 +10,15 @@ jobs:
   build-runspace:
     runs-on: windows-latest
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
       with:
         ref: ${{ github.head_ref }}
-    - name: Create local changes
+    - name: Compile project
+      shell: pwsh
       run: |
-        powershell.exe -f Compile.ps1
-    - uses: stefanzweifel/git-auto-commit-action@v4.16.0
+        Set-ExecutionPolicy Bypass -Scope Process -Force; ./Compile.ps1
+      continue-on-error: false # Directly fail the job on error, removing the need for a separate check
+    - uses: stefanzweifel/git-auto-commit-action@v5
       with:
         commit_message: Compile Winutil
+      if: success()
