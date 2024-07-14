@@ -10,7 +10,7 @@ $InitialSessionState = [System.Management.Automation.Runspaces.InitialSessionSta
 $InitialSessionState.Variables.Add($hashVars)
 
 # Get every private function and add them to the session state
-$functions = Get-ChildItem function:\ | Where-Object {$_.name -like "*winutil*" -or $_.name -like "*WPF*"}
+$functions = (Get-ChildItem function:\).where{$_.name -like "*winutil*" -or $_.name -like "*WPF*"}
 foreach ($function in $functions){
     $functionDefinition = Get-Content function:\$($function.name)
     $functionEntry = New-Object System.Management.Automation.Runspaces.SessionStateFunctionEntry -ArgumentList $($function.name), $functionDefinition
@@ -70,15 +70,16 @@ $inputXML = Set-WinUtilUITheme -inputXML $inputXML -themeName $ctttheme
 
 # Read the XAML file
 $reader = (New-Object System.Xml.XmlNodeReader $xaml)
-try { $sync["Form"] = [Windows.Markup.XamlReader]::Load( $reader ) }
-catch [System.Management.Automation.MethodInvocationException] {
+try {
+    $sync["Form"] = [Windows.Markup.XamlReader]::Load( $reader )
+} catch [System.Management.Automation.MethodInvocationException] {
     Write-Warning "We ran into a problem with the XAML code.  Check the syntax for this control..."
     Write-Host $error[0].Exception.Message -ForegroundColor Red
+
     If ($error[0].Exception.Message -like "*button*") {
         write-warning "Ensure your &lt;button in the `$inputXML does NOT have a Click=ButtonClick property.  PS can't handle this`n`n`n`n"
     }
-}
-catch {
+} catch {
     Write-Host "Unable to load Windows.Markup.XamlReader. Double-check syntax and ensure .net is installed."
 }
 
@@ -133,9 +134,17 @@ $sync.keys | ForEach-Object {
 
 # Load computer information in the background
 Invoke-WPFRunspace -ScriptBlock {
-    $sync.ConfigLoaded = $False
-    $sync.ComputerInfo = Get-ComputerInfo
-    $sync.ConfigLoaded = $True
+    try{
+        $oldProgressPreference = $ProgressPreference
+        $ProgressPreference = "SilentlyContinue"
+        $sync.ConfigLoaded = $False
+        $sync.ComputerInfo = Get-ComputerInfo
+        $sync.ConfigLoaded = $True
+    }
+    finally{
+        $ProgressPreference = "Continue"
+    }
+
 } | Out-Null
 
 #===========================================================================
@@ -144,9 +153,6 @@ Invoke-WPFRunspace -ScriptBlock {
 
 # Print the logo
 Invoke-WPFFormVariables
-
-# Check if Chocolatey is installed @lctde Skip Chocolatey instalation
-#Install-WinUtilChoco
 
 # Set the titlebar
 $sync["Form"].title = $sync["Form"].title + " " + $sync.version
@@ -158,9 +164,9 @@ $sync["Form"].Add_Closing({
 })
 
 # Attach the event handler to the Click event
-$sync.CheckboxFilterClear.Add_Click({
-    $sync.CheckboxFilter.Text = ""
-    $sync.CheckboxFilterClear.Visibility = "Collapsed"
+$sync.SearchBarClearButton.Add_Click({
+    $sync.SearchBar.Text = ""
+    $sync.SearchBarClearButton.Visibility = "Collapsed"
 })
 
 # add some shortcuts for people that don't like clicking
@@ -171,9 +177,9 @@ $commonKeyEvents = {
 
     if ($_.Key -eq "Escape")
     {
-        $sync.CheckboxFilter.SelectAll()
-        $sync.CheckboxFilter.Text = ""
-        $sync.CheckboxFilterClear.Visibility = "Collapsed"
+        $sync.SearchBar.SelectAll()
+        $sync.SearchBar.Text = ""
+        $sync.SearchBarClearButton.Visibility = "Collapsed"
         return
     }
 
@@ -204,11 +210,11 @@ $commonKeyEvents = {
     }
     # shortcut for the filter box
     if ($_.Key -eq "F" -and $_.KeyboardDevice.Modifiers -eq "Ctrl") {
-        if ($sync.CheckboxFilter.Text -eq "Ctrl-F to filter") {
-            $sync.CheckboxFilter.SelectAll()
-            $sync.CheckboxFilter.Text = ""
+        if ($sync.SearchBar.Text -eq "Ctrl-F to filter") {
+            $sync.SearchBar.SelectAll()
+            $sync.SearchBar.Text = ""
         }
-        $sync.CheckboxFilter.Focus()
+        $sync.SearchBar.Focus()
     }
 }
 
@@ -271,26 +277,48 @@ Add-Type @"
 "@
     }
 
-    foreach ($proc in (Get-Process | Where-Object { $_.MainWindowTitle -and $_.MainWindowTitle -like "*titus*" })) {
-        if ($proc.Id -ne [System.IntPtr]::Zero) {
+   foreach ($proc in (Get-Process).where{ $_.MainWindowTitle -and $_.MainWindowTitle -like "*titus*" }) {
+        # Check if the process's MainWindowHandle is valid
+    	if ($proc.MainWindowHandle -ne [System.IntPtr]::Zero) {
             Write-Debug "MainWindowHandle: $($proc.Id) $($proc.MainWindowTitle) $($proc.MainWindowHandle)"
             $windowHandle = $proc.MainWindowHandle
+	    } else {
+        	Write-Warning "Process found, but no MainWindowHandle: $($proc.Id) $($proc.MainWindowTitle)"
+
         }
     }
 
-    # need to experiemnt more
-    # setting icon for the windows is still not working
-    # $pngUrl = "https://christitus.com/images/logo-full.png"
-    # $pngPath = "$env:TEMP\cttlogo.png"
-    # $iconPath = "$env:TEMP\cttlogo.ico"
-    # # Download the PNG file
-    # Invoke-WebRequest -Uri $pngUrl -OutFile $pngPath
-    # if (Test-Path -Path $pngPath) {
-    #     ConvertTo-Icon -bitmapPath $pngPath -iconPath $iconPath
-    # }
-    # $icon = [System.Drawing.Icon]::ExtractAssociatedIcon($iconPath)
-    # Write-Host $icon.Handle
-    # [Window]::SendMessage($windowHandle, 0x80, [IntPtr]::Zero, $icon.Handle)
+
+    # Using a TaskbarItem Overlay until someone figures out how to replace the icon correctly
+
+    # URL of the image
+    $imageUrl = "https://christitus.com/images/logo-full.png"
+
+    # Download the image
+    $imagePath = "$env:TEMP\logo-full.png"
+    Invoke-WebRequest -Uri $imageUrl -OutFile $imagePath
+
+    # Read the image file as a byte array
+    $imageBytes = [System.IO.File]::ReadAllBytes($imagePath)
+
+    # Convert the byte array to a Base64 string
+    $base64String = [System.Convert]::ToBase64String($imageBytes)
+
+    # Create a streaming image by streaming the base64 string to a bitmap streamsource
+    $bitmap = New-Object System.Windows.Media.Imaging.BitmapImage
+    $bitmap.BeginInit()
+    $bitmap.StreamSource = [System.IO.MemoryStream][System.Convert]::FromBase64String($base64String)
+    $bitmap.EndInit()
+    $bitmap.Freeze()
+
+    # Ensure TaskbarItemInfo is created if not already
+    if (-not $sync["Form"].TaskbarItemInfo) {
+        $sync["Form"].TaskbarItemInfo = New-Object System.Windows.Shell.TaskbarItemInfo
+    }
+
+    # Set the overlay icon for the taskbar
+    $sync["Form"].TaskbarItemInfo.Overlay = $bitmap
+
 
     $rect = New-Object RECT
     [Window]::GetWindowRect($windowHandle, [ref]$rect)
@@ -363,17 +391,26 @@ Add-Type @"
 
 })
 
-$sync["CheckboxFilter"].Add_TextChanged({
+# Load Checkboxes and Labels outside of the Filter function only once on startup for performance reasons
+$filter = Get-WinUtilVariables -Type CheckBox
+$CheckBoxes = ($sync.GetEnumerator()).where{ $psitem.Key -in $filter }
 
-    if ($sync.CheckboxFilter.Text -ne "") {
-        $sync.CheckboxFilterClear.Visibility = "Visible"
+$filter = Get-WinUtilVariables -Type Label
+$labels = @{}
+($sync.GetEnumerator()).where{$PSItem.Key -in $filter} | ForEach-Object {$labels[$_.Key] = $_.Value}
+
+$allCategories = $checkBoxes.Name | ForEach-Object {$sync.configs.applications.$_} | Select-Object  -Unique -ExpandProperty category
+
+$sync["SearchBar"].Add_TextChanged({
+
+    if ($sync.SearchBar.Text -ne "") {
+        $sync.SearchBarClearButton.Visibility = "Visible"
     }
     else {
-        $sync.CheckboxFilterClear.Visibility = "Collapsed"
+        $sync.SearchBarClearButton.Visibility = "Collapsed"
     }
 
-    $filter = Get-WinUtilVariables -Type CheckBox
-    $CheckBoxes = $sync.GetEnumerator() | Where-Object { $psitem.Key -in $filter }
+    $activeApplications = @()
 
     foreach ($CheckBox in $CheckBoxes) {
         # Check if the checkbox is null or if it doesn't have content
@@ -381,7 +418,7 @@ $sync["CheckboxFilter"].Add_TextChanged({
             continue
         }
 
-        $textToSearch = $sync.CheckboxFilter.Text.ToLower()
+        $textToSearch = $sync.SearchBar.Text.ToLower()
         $checkBoxName = $CheckBox.Key
         $textBlockName = $checkBoxName + "Link"
 
@@ -390,6 +427,7 @@ $sync["CheckboxFilter"].Add_TextChanged({
 
         if ($CheckBox.Value.Content.ToLower().Contains($textToSearch)) {
             $CheckBox.Value.Visibility = "Visible"
+            $activeApplications += $sync.configs.applications.$checkboxName
              # Set the corresponding text block visibility
             if ($textBlock -ne $null) {
                 $textBlock.Visibility = "Visible"
@@ -403,7 +441,21 @@ $sync["CheckboxFilter"].Add_TextChanged({
             }
         }
     }
+    $activeCategories = $activeApplications | Select-Object -ExpandProperty category -Unique
 
+    foreach ($category in $activeCategories){
+        $label = $labels[$(Get-WPFObjectName -type "Label" -name $category)]
+        $label.Visibility = "Visible"
+    }
+    if ($activeCategories){
+        $inactiveCategories = Compare-Object -ReferenceObject $allCategories -DifferenceObject $activeCategories -PassThru
+    }
+    else{
+        $inactiveCategories = $allCategories
+    }
+    foreach ($category in $inactiveCategories){
+        $label = $labels[$(Get-WPFObjectName -type "Label" -name $category)]
+        $label.Visibility = "Collapsed"}
 })
 
 # Define event handler for button click
@@ -439,17 +491,19 @@ $sync["AboutMenuItem"].Add_Click({
     # Handle Export menu item click
     Write-Debug "About clicked"
     $sync["SettingsPopup"].IsOpen = $false
-    # Example usage
     $authorInfo = @"
-Author   : @christitustech
-Runspace : @DeveloperDurp
-GUI      : @KonTy
-MicroWin : @KonTy
-GitHub   : https://github.com/ChrisTitusTech/winutil
-Version  : $($sync.version)
+Author   : <a href="https://github.com/ChrisTitusTech">@christitustech</a>
+Runspace : <a href="https://github.com/DeveloperDurp">@DeveloperDurp</a>
+MicroWin : <a href="https://github.com/KonTy">@KonTy</a>
+GitHub   : <a href="https://github.com/ChrisTitusTech/winutil">ChrisTitusTech/winutil</a>
+Version  : <a href="https://github.com/ChrisTitusTech/winutil/releases/tag/$($sync.version)">$($sync.version)</a>
 "@
-    Show-CustomDialog -Message $authorInfo -Width 400
+    $FontSize = $sync.configs.themes.$ctttheme.CustomDialogFontSize
+    $HeaderFontSize = $sync.configs.themes.$ctttheme.CustomDialogFontSizeHeader
+    $IconSize = $sync.configs.themes.$ctttheme.CustomDialogIconSize
+    $Width = $sync.configs.themes.$ctttheme.CustomDialogWidth
+    $Height = $sync.configs.themes.$ctttheme.CustomDialogHeight
+    Show-CustomDialog -Message $authorInfo -Width $Width -Height $Height -FontSize $FontSize -HeaderFontSize $HeaderFontSize -IconSize $IconSize
 })
-
 $sync["Form"].ShowDialog() | out-null
 Stop-Transcript

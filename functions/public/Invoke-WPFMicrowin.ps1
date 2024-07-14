@@ -53,6 +53,7 @@ public class PowerManagement {
 	$keepEdge = $sync.WPFMicrowinKeepEdge.IsChecked
 	$copyToUSB = $sync.WPFMicrowinCopyToUsb.IsChecked
 	$injectDrivers = $sync.MicrowinInjectDrivers.IsChecked
+	$importDrivers = $sync.MicrowinImportDrivers.IsChecked
 
     $mountDir = $sync.MicrowinMountDir.Text
     $scratchDir = $sync.MicrowinScratchDir.Text
@@ -91,7 +92,7 @@ public class PowerManagement {
 
 	$mountDirExists = Test-Path $mountDir
     $scratchDirExists = Test-Path $scratchDir
-	if (-not $mountDirExists -or -not $scratchDirExists) 
+	if (-not $mountDirExists -or -not $scratchDirExists)
 	{
         Write-Error "Required directories '$mountDirExists' '$scratchDirExists' and do not exist."
         return
@@ -111,15 +112,56 @@ public class PowerManagement {
             return
         }
 
+		if ($importDrivers)
+		{
+			Write-Host "Exporting drivers from active installation..."
+			if (Test-Path "$env:TEMP\DRV_EXPORT")
+			{
+				Remove-Item "$env:TEMP\DRV_EXPORT" -Recurse -Force
+			}
+			if (($injectDrivers -and (Test-Path $sync.MicrowinDriverLocation.Text)))
+			{
+				Write-Host "Using specified driver source..."
+				dism /english /online /export-driver /destination="$($sync.MicrowinDriverLocation.Text)" | Out-Host
+				if ($?)
+				{
+					# Don't add exported drivers yet, that is run later
+					Write-Host "Drivers have been exported successfully."
+				}
+				else
+				{
+					Write-Host "Failed to export drivers."
+				}
+			}
+			else
+			{
+				New-Item -Path "$env:TEMP\DRV_EXPORT" -ItemType Directory -Force
+				dism /english /online /export-driver /destination="$env:TEMP\DRV_EXPORT" | Out-Host
+				if ($?)
+				{
+					Write-Host "Adding exported drivers..."
+					dism /english /image="$scratchDir" /add-driver /driver="$env:TEMP\DRV_EXPORT" /recurse | Out-Host
+				}
+				else
+				{
+					Write-Host "Failed to export drivers. Continuing without importing them..."
+				}
+				if (Test-Path "$env:TEMP\DRV_EXPORT")
+				{
+					Remove-Item "$env:TEMP\DRV_EXPORT" -Recurse -Force
+				}
+			}
+		}
+
 		if ($injectDrivers)
 		{
 			$driverPath = $sync.MicrowinDriverLocation.Text
 			if (Test-Path $driverPath)
 			{
 				Write-Host "Adding Windows Drivers image($scratchDir) drivers($driverPath) "
-				Add-WindowsDriver -Path "$scratchDir" -Recurse -Driver "$driverPath"
+				dism /English /image:$scratchDir /add-driver /driver:$driverPath /recurse | Out-Host
 			}
-			else 
+			else
 			{
 				Write-Host "Path to drivers is invalid continuing without driver injection"
 			}
@@ -129,23 +171,24 @@ public class PowerManagement {
 		Remove-Features -keepDefender:$keepDefender
 		Write-Host "Removing features complete!"
 
-		Write-Host "Removing Appx Bloat"
 		if (!$keepPackages)
 		{
+			Write-Host "Removing OS packages"
 			Remove-Packages
 		}
 		if (!$keepProvisionedPackages)
 		{
+			Write-Host "Removing Appx Bloat"
 			Remove-ProvisionedPackages -keepSecurity:$keepDefender
 		}
 
 		# special code, for some reason when you try to delete some inbox apps
-		# we have to get and delete log files directory. 
+		# we have to get and delete log files directory.
 		Remove-FileOrDirectory -pathToDelete "$($scratchDir)\Windows\System32\LogFiles\WMI\RtBackup" -Directory
 		Remove-FileOrDirectory -pathToDelete "$($scratchDir)\Windows\System32\WebThreatDefSvc" -Directory
 
 		# Defender is hidden in 2 places we removed a feature above now need to remove it from the disk
-		if (!$keepDefender) 
+		if (!$keepDefender)
 		{
 			Write-Host "Removing Defender"
 			Remove-FileOrDirectory -pathToDelete "$($scratchDir)\Program Files\Windows Defender" -Directory
@@ -162,7 +205,7 @@ public class PowerManagement {
 		Remove-FileOrDirectory -pathToDelete "$($scratchDir)\Windows\DiagTrack" -Directory
 		Remove-FileOrDirectory -pathToDelete "$($scratchDir)\Windows\InboxApps" -Directory
 		Remove-FileOrDirectory -pathToDelete "$($scratchDir)\Windows\System32\SecurityHealthSystray.exe"
-		Remove-FileOrDirectory -pathToDelete "$($scratchDir)\Windows\System32\LocationNotificationWindows.exe" 
+		Remove-FileOrDirectory -pathToDelete "$($scratchDir)\Windows\System32\LocationNotificationWindows.exe"
 		Remove-FileOrDirectory -pathToDelete "$($scratchDir)\Program Files (x86)\Windows Photo Viewer" -Directory
 		Remove-FileOrDirectory -pathToDelete "$($scratchDir)\Program Files\Windows Photo Viewer" -Directory
 		Remove-FileOrDirectory -pathToDelete "$($scratchDir)\Program Files (x86)\Windows Media Player" -Directory
@@ -202,26 +245,27 @@ public class PowerManagement {
 		$desktopDir = "$($scratchDir)\Windows\Users\Default\Desktop"
 		New-Item -ItemType Directory -Force -Path "$desktopDir"
 	    dism /English /image:$($scratchDir) /set-profilepath:"$($scratchDir)\Windows\Users\Default"
-		$command = "powershell.exe -NoProfile -ExecutionPolicy Bypass -Command 'irm https://christitus.com/win | iex'"
-		$shortcutPath = "$desktopDir\WinUtil.lnk"
-		$shell = New-Object -ComObject WScript.Shell
-		$shortcut = $shell.CreateShortcut($shortcutPath)
 
-		if (Test-Path -Path "$env:TEMP\cttlogo.png")
-		{
-			$pngPath = "$env:TEMP\cttlogo.png"
-			$icoPath = "$env:TEMP\cttlogo.ico"
-			ConvertTo-Icon -bitmapPath $pngPath -iconPath $icoPath
-			Write-Host "ICO file created at: $icoPath"
-			Copy-Item "$env:TEMP\cttlogo.png" "$($scratchDir)\Windows\cttlogo.png" -force
-			Copy-Item "$env:TEMP\cttlogo.ico" "$($scratchDir)\Windows\cttlogo.ico" -force
-			$shortcut.IconLocation = "c:\Windows\cttlogo.ico"
-		}
+		# $command = "powershell.exe -NoProfile -ExecutionPolicy Bypass -Command 'irm https://christitus.com/win | iex'"
+		# $shortcutPath = "$desktopDir\WinUtil.lnk"
+		# $shell = New-Object -ComObject WScript.Shell
+		# $shortcut = $shell.CreateShortcut($shortcutPath)
 
-		$shortcut.TargetPath = "powershell.exe"
-		$shortcut.Arguments = "-NoProfile -ExecutionPolicy Bypass -Command `"$command`""
-		$shortcut.Save()
-		Write-Host "Shortcut to winutil created at: $shortcutPath"
+		# if (Test-Path -Path "$env:TEMP\cttlogo.png")
+		# {
+		# 	$pngPath = "$env:TEMP\cttlogo.png"
+		# 	$icoPath = "$env:TEMP\cttlogo.ico"
+		# 	ConvertTo-Icon -bitmapPath $pngPath -iconPath $icoPath
+		# 	Write-Host "ICO file created at: $icoPath"
+		# 	Copy-Item "$env:TEMP\cttlogo.png" "$($scratchDir)\Windows\cttlogo.png" -force
+		# 	Copy-Item "$env:TEMP\cttlogo.ico" "$($scratchDir)\Windows\cttlogo.ico" -force
+		# 	$shortcut.IconLocation = "c:\Windows\cttlogo.ico"
+		# }
+
+		# $shortcut.TargetPath = "powershell.exe"
+		# $shortcut.Arguments = "-NoProfile -ExecutionPolicy Bypass -Command `"$command`""
+		# $shortcut.Save()
+		# Write-Host "Shortcut to winutil created at: $shortcutPath"
 		# *************************** Automation black ***************************
 
 		Write-Host "Copy checkinstall.cmd into the ISO"
@@ -242,7 +286,7 @@ public class PowerManagement {
 		Write-Host "Disabling Teams"
 		reg add "HKLM\zSOFTWARE\Microsoft\Windows\CurrentVersion\Communications" /v "ConfigureChatAutoInstall" /t REG_DWORD /d 0 /f   >$null 2>&1
 		reg add "HKLM\zSOFTWARE\Policies\Microsoft\Windows\Windows Chat" /v ChatIcon /t REG_DWORD /d 2 /f                             >$null 2>&1
-		reg add "HKLM\zNTUSER\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Advanced" /v "TaskbarMn" /t REG_DWORD /d 0 /f        >$null 2>&1  
+		reg add "HKLM\zNTUSER\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Advanced" /v "TaskbarMn" /t REG_DWORD /d 0 /f        >$null 2>&1
 		reg query "HKLM\zSOFTWARE\Microsoft\Windows\CurrentVersion\Communications" /v "ConfigureChatAutoInstall"                      >$null 2>&1
 		# Write-Host Error code $LASTEXITCODE
 		Write-Host "Done disabling Teams"
@@ -284,7 +328,7 @@ public class PowerManagement {
 		reg add "HKLM\zSOFTWARE\Policies\Microsoft\Windows\CloudContent" /v "DisableWindowsConsumerFeatures" /t REG_DWORD /d 1 /f
 		reg add "HKLM\zSOFTWARE\Microsoft\PolicyManager\current\device\Start" /v "ConfigureStartPins" /t REG_SZ /d '{\"pinnedList\": [{}]}' /f
 		Write-Host "Done removing Sponsored Apps"
-		
+
 		Write-Host "Disabling Reserved Storage"
 		reg add "HKLM\zSOFTWARE\Microsoft\Windows\CurrentVersion\ReserveManager" /v "ShippedWithReserves" /t REG_DWORD /d 0 /f
 
@@ -308,8 +352,8 @@ public class PowerManagement {
 
 		Write-Host "Unmounting image..."
         Dismount-WindowsImage -Path $scratchDir -Save
-	} 
-	
+	}
+
 	try {
 
 		Write-Host "Exporting image into $mountDir\sources\install2.wim"
@@ -325,7 +369,7 @@ public class PowerManagement {
 		}
 		Write-Host "Windows image completed. Continuing with boot.wim."
 
-		# Next step boot image		
+		# Next step boot image
 		Write-Host "Mounting boot image $mountDir\sources\boot.wim into $scratchDir"
         Mount-WindowsImage -ImagePath "$mountDir\sources\boot.wim" -Index 2 -Path "$scratchDir"
 
@@ -335,14 +379,14 @@ public class PowerManagement {
 			if (Test-Path $driverPath)
 			{
 				Write-Host "Adding Windows Drivers image($scratchDir) drivers($driverPath) "
-				Add-WindowsDriver -Path "$scratchDir" -Driver "$driverPath" -Recurse
+				dism /English /image:$scratchDir /add-driver /driver:$driverPath /recurse | Out-Host
 			}
-			else 
+			else
 			{
 				Write-Host "Path to drivers is invalid continuing without driver injection"
 			}
 		}
-	
+
 		Write-Host "Loading registry..."
 		reg load HKLM\zCOMPONENTS "$($scratchDir)\Windows\System32\config\COMPONENTS" >$null
 		reg load HKLM\zDEFAULT "$($scratchDir)\Windows\System32\config\default" >$null
@@ -406,7 +450,7 @@ public class PowerManagement {
 			Copy-ToUSB("$($SaveDialog.FileName)")
 			if ($?) { Write-Host "Done Copying target ISO to USB drive!" } else { Write-Host "ISO copy failed." }
 		}
-		
+
 		Write-Host " _____                       "
 		Write-Host "(____ \                      "
 		Write-Host " _   \ \ ___  ____   ____    "
@@ -426,9 +470,9 @@ public class PowerManagement {
 		} else {
 			Write-Host "ISO creation failed. The "$($mountDir)" directory has not been removed."
 		}
-		
+
 		$sync.MicrowinOptionsPanel.Visibility = 'Collapsed'
-		
+
 		#$sync.MicrowinFinalIsoLocation.Text = "$env:temp\microwin.iso"
         $sync.MicrowinFinalIsoLocation.Text = "$($SaveDialog.FileName)"
 		# Allow the machine to sleep again (optional)

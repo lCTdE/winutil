@@ -21,15 +21,14 @@ function Invoke-WPFButton {
         "WPFinstall" {Invoke-WPFInstall}
         "WPFuninstall" {Invoke-WPFUnInstall}
         "WPFInstallUpgrade" {Invoke-WPFInstallUpgrade}
-        "WPFdesktop" {Invoke-WPFPresets "Desktop"}
-        "WPFlaptop" {Invoke-WPFPresets "laptop"}
-        "WPFminimal" {Invoke-WPFPresets "minimal"}
+        "WPFstandard" {Invoke-WPFPresets "Standard"}
+        "WPFminimal" {Invoke-WPFPresets "Minimal"}
         "WPFclear" {Invoke-WPFPresets -preset $null -imported $true}
         "WPFclearWinget" {Invoke-WPFPresets -preset $null -imported $true -CheckBox "WPFInstall"}
         "WPFtweaksbutton" {Invoke-WPFtweaksbutton}
-        "WPFOOSUbutton" {Invoke-WPFOOSU -action "customize"}
-        "WPFAddUltPerf" {Invoke-WPFUltimatePerformance -State "Enabled"}
-        "WPFRemoveUltPerf" {Invoke-WPFUltimatePerformance -State "Disabled"}
+        "WPFOOSUbutton" {Invoke-WPFOOSU}
+        "WPFAddUltPerf" {Invoke-WPFUltimatePerformance -State "Enable"}
+        "WPFRemoveUltPerf" {Invoke-WPFUltimatePerformance -State "Disable"}
         "WPFundoall" {Invoke-WPFundoall}
         "WPFFeatureInstall" {Invoke-WPFFeatureInstall}
         "WPFPanelDISM" {Invoke-WPFPanelDISM}

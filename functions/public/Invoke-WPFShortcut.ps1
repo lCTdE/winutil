@@ -17,35 +17,48 @@ function Invoke-WPFShortcut {
         [bool]$RunAsAdmin = $false
     )
 
-        $iconPath = $null
-        Switch ($ShortcutToAdd) {
-            "WinUtil" {
-                $SourceExe = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
-                $IRM = 'irm https://christitus.com/win | iex'
-                $Powershell = '-ExecutionPolicy Bypass -Command "Start-Process powershell.exe -verb runas -ArgumentList'
-                $ArgumentsToSourceExe = "$powershell '$IRM'"
-                $DestinationName = "WinUtil.lnk"
+    # Preper the Shortcut Fields and add an a Custom Icon if it's available at "$env:TEMP\cttlogo.png", else don't add a Custom Icon.
+    $iconPath = $null
+    Switch ($ShortcutToAdd) {
+        "WinUtil" {
+            $SourceExe = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
+            $IRM = 'irm https://christitus.com/win | iex'
+            $Powershell = '-ExecutionPolicy Bypass -Command "Start-Process powershell.exe -verb runas -ArgumentList'
+            $ArgumentsToSourceExe = "$powershell '$IRM'"
+            $DestinationName = "WinUtil.lnk"
 
-                if (Test-Path -Path "$env:TEMP\cttlogo.png") {
-                    $iconPath = "$env:SystempRoot\cttlogo.ico"
-                    ConvertTo-Icon -bitmapPath "$env:TEMP\cttlogo.png" -iconPath $iconPath
-                }
+            Invoke-WebRequest -Uri "https://christitus.com/images/logo-full.png" -OutFile "$env:TEMP\cttlogo.png"
+
+            if (Test-Path -Path "$env:TEMP\cttlogo.png") {
+                $iconPath = "$env:LOCALAPPDATA\winutil\cttlogo.ico"
+                ConvertTo-Icon -bitmapPath "$env:TEMP\cttlogo.png" -iconPath $iconPath
             }
         }
+    }
 
+    # Show a File Dialog Browser, to let the User choose the Name and Location of where to save the Shortcut
     $FileBrowser = New-Object System.Windows.Forms.SaveFileDialog
     $FileBrowser.InitialDirectory = [Environment]::GetFolderPath('Desktop')
     $FileBrowser.Filter = "Shortcut Files (*.lnk)|*.lnk"
     $FileBrowser.FileName = $DestinationName
-    $FileBrowser.ShowDialog() | Out-Null
 
+    # Do an Early Return if the Save Operation was canceled by User's Input.
+    $FileBrowserResult = $FileBrowser.ShowDialog()
+    $DialogResultEnum = New-Object System.Windows.Forms.DialogResult
+    if (-not ($FileBrowserResult -eq $DialogResultEnum::OK)) {
+        return
+    }
+
+    # Prepare the Shortcut paramter
     $WshShell = New-Object -comObject WScript.Shell
     $Shortcut = $WshShell.CreateShortcut($FileBrowser.FileName)
     $Shortcut.TargetPath = $SourceExe
     $Shortcut.Arguments = $ArgumentsToSourceExe
-    if ($null -ne $iconPath) {
+    if ($iconPath -ne $null) {
         $shortcut.IconLocation = $iconPath
     }
+
+    # Save the Shortcut to disk
     $Shortcut.Save()
 
     if ($RunAsAdmin -eq $true) {
